@@ -363,12 +363,26 @@ async function submitQuiz(auto = false){
 
     finishClientSession(auto ? 'Time expired — quiz submitted' : 'Quiz submitted successfully');
   }catch(e){
+    // A backend can finish writing the result but fail during a later, non-critical
+    // operation (for example cache invalidation). Confirm the attempt state before
+    // telling a participant the submission failed or asking them to retry.
+    try {
+      const status = await checkServerAttemptStatus();
+      const serverStatus = String(status && status.status || '').toUpperCase();
+      if (status && status.exists && (serverStatus === 'SUBMITTED' || serverStatus === 'AUTO_SUBMITTED')) {
+        finishClientSession(auto ? 'Time expired — quiz submitted' : 'Quiz submitted successfully');
+        return;
+      }
+    } catch (_) {
+      // Server unreachable: retain the saved local session and offer retry/recovery below.
+    }
+
     submitting = false;
     $('submitBtn').disabled = false;
     $('submitBtn').textContent = 'Try Submission Again';
-    setStatus(e.message, 'error');
+    setStatus(e.message || 'Submission could not be confirmed. Check your connection and retry.', 'error');
     if (auto) scheduleRecoveryRetry();
-    else alert(e.message);
+    else alert(e.message || 'Submission could not be confirmed. Please retry when connected.');
   }
 }
 
